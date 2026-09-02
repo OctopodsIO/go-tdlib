@@ -76,7 +76,7 @@ func (instance *tdlib) receiver() {
 			continue
 		}
 
-		if client.isClosed {
+		if client.isClosed.Load() {
 			continue
 		}
 

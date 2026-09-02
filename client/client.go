@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,7 +14,11 @@ type Client struct {
 	resultHandler   ResultHandler
 	catchersStore   *sync.Map
 	fallbackTimeout time.Duration
-	isClosed        bool
+
+	// Octopods patch: atomic because receiver() writes it while the shared
+	// tdlibInstance.receiver() reads it, on a different goroutine. Upstream
+	// left it a plain bool.
+	isClosed atomic.Bool
 }
 
 type Option func(*Client)
@@ -65,7 +70,6 @@ func NewClient(authorizationStateHandler AuthorizationStateHandler, options ...O
 		jsonClient:    NewJsonClient(),
 		responses:     make(chan *Response, 1000),
 		catchersStore: &sync.Map{},
-		isClosed:      false,
 	}
 
 	client.extraGenerator = UuidV4Generator()
@@ -118,7 +122,7 @@ func (client *Client) receiver() {
 
 		if typ.GetConstructor() == ConstructorUpdateAuthorizationState &&
 			typ.(*UpdateAuthorizationState).AuthorizationState.AuthorizationStateConstructor() == ConstructorAuthorizationStateClosed {
-			client.isClosed = true
+			client.isClosed.Store(true)
 			close(client.responses)
 		}
 	}
