@@ -1,3 +1,3 @@
-module github.com/zelenin/go-tdlib
+module github.com/OctopodsIO/go-tdlib
 
 go 1.23

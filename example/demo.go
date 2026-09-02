@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/zelenin/go-tdlib/client"
+	"github.com/OctopodsIO/go-tdlib/client"
 )
 
 func main() {

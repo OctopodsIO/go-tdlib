@@ -2,7 +2,7 @@ package iter
 
 import (
 	"context"
-	"github.com/zelenin/go-tdlib/client"
+	"github.com/OctopodsIO/go-tdlib/client"
 	"iter"
 )
 
