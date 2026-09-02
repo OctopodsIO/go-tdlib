@@ -72,12 +72,20 @@ func NewClient(authorizationStateHandler AuthorizationStateHandler, options ...O
 	client.resultHandler = NewCallbackResultHandler(func(result Type) {})
 	client.fallbackTimeout = 60 * time.Second
 
+	// Octopods patch: options are applied before the receiver runs, and on this
+	// goroutine. Upstream applied them in goroutines after starting it, so
+	// WithResultHandler wrote client.resultHandler while receiver() was reading
+	// it, with no synchronisation. A torn read of that field crashes the whole
+	// process, taking every other client in it down.
+	//
+	// The cost is that WithProxy no longer works: it sends a request, and no
+	// request can complete before the receiver starts.
+	for _, option := range options {
+		option(client)
+	}
+
 	tdlibInstance.addClient(client)
 	go client.receiver()
-
-	for _, option := range options {
-		go option(client)
-	}
 
 	err := Authorize(client, authorizationStateHandler)
 	if err != nil {
