@@ -81,7 +81,12 @@ func NewClient(authorizationStateHandler AuthorizationStateHandler, options ...O
 
 	err := Authorize(client, authorizationStateHandler)
 	if err != nil {
-		return nil, err
+		// Octopods patch: the client is returned even though authorization
+		// failed. The native TDLib client is alive and holding the database
+		// open at this point, and nothing else can reach it, so returning nil
+		// leaks it for the life of the process. Callers must still check the
+		// error first; the client is only there to be closed.
+		return client, err
 	}
 
 	return client, nil
