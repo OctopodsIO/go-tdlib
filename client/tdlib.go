@@ -21,6 +21,7 @@ import (
 	"log"
 	"strconv"
 	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -69,6 +70,7 @@ func (instance *tdlib) receiver() {
 		if err != nil {
 			continue
 		}
+		logSendTiming("native_receiver", resp.MetaClientId, resp.MetaExtra)
 
 		client, err := instance.getClient(resp.MetaClientId)
 		if err != nil {
@@ -80,7 +82,13 @@ func (instance *tdlib) receiver() {
 			continue
 		}
 
+		routeStarted := time.Now()
 		client.responses <- resp
+		if elapsed := time.Since(routeStarted); elapsed >= time.Second {
+			log.Printf("tdlib_receiver_route_slow at=%s client_id=%d duration_ms=%d",
+				time.Now().UTC().Format(time.RFC3339Nano), resp.MetaClientId, elapsed.Milliseconds())
+		}
+		logSendTiming("shared_queued", resp.MetaClientId, resp.MetaExtra)
 	}
 }
 

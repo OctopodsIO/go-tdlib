@@ -2,10 +2,31 @@ package client
 
 import (
 	"context"
+	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// Octopods patch: tag only sendMessage request IDs so a response remains
+// recognizable if it arrives after the caller's deadline. No content is logged.
+const sendTimingPrefix = "octopods-send:"
+
+func sendExtra(req Request, extra string) string {
+	if _, ok := req.(*SendMessageRequest); ok {
+		return sendTimingPrefix + extra
+	}
+	return extra
+}
+
+func logSendTiming(stage string, clientID int, extra string) {
+	if !strings.HasPrefix(extra, sendTimingPrefix) {
+		return
+	}
+	log.Printf("tdlib_send_timing stage=%s at=%s client_id=%d extra=%s",
+		stage, time.Now().UTC().Format(time.RFC3339Nano), clientID, extra)
+}
 
 type Client struct {
 	jsonClient      *JsonClient
@@ -107,9 +128,11 @@ func NewClient(authorizationStateHandler AuthorizationStateHandler, options ...O
 func (client *Client) receiver() {
 	for response := range client.responses {
 		if response.MetaExtra != "" {
+			logSendTiming("client_receiver", client.jsonClient.id, response.MetaExtra)
 			value, ok := client.catchersStore.Load(response.MetaExtra)
 			if ok {
 				value.(chan *Response) <- response
+				logSendTiming("handed_to_waiter", client.jsonClient.id, response.MetaExtra)
 			}
 		}
 
@@ -129,8 +152,16 @@ func (client *Client) receiver() {
 }
 
 func (client *Client) Send(ctx context.Context, req Request) (*Response, error) {
-	req.SetExtra(client.extraGenerator())
+	req.SetExtra(sendExtra(req, client.extraGenerator()))
 	req.SetType(req.GetFunctionName())
+	if send, ok := req.(*SendMessageRequest); ok {
+		var sendingID int32
+		if send.Options != nil {
+			sendingID = send.Options.SendingId
+		}
+		log.Printf("tdlib_send_timing stage=request at=%s client_id=%d extra=%s chat_id=%d sending_id=%d",
+			time.Now().UTC().Format(time.RFC3339Nano), client.jsonClient.id, req.GetExtra(), send.ChatId, sendingID)
+	}
 
 	catcher := make(chan *Response)
 
@@ -143,6 +174,7 @@ func (client *Client) Send(ctx context.Context, req Request) (*Response, error) 
 
 	err := client.jsonClient.Send(req)
 	if err != nil {
+		logSendTiming("native_send_error", client.jsonClient.id, req.GetExtra())
 		return nil, err
 	}
 
@@ -151,12 +183,15 @@ func (client *Client) Send(ctx context.Context, req Request) (*Response, error) 
 
 	select {
 	case response := <-catcher:
+		logSendTiming("returned", client.jsonClient.id, req.GetExtra())
 		return response, nil
 
 	case <-ctx.Done():
+		logSendTiming("deadline", client.jsonClient.id, req.GetExtra())
 		return nil, ctx.Err()
 
 	case <-fallbackCtx.Done():
+		logSendTiming("fallback_deadline", client.jsonClient.id, req.GetExtra())
 		return nil, fallbackCtx.Err()
 	}
 }
